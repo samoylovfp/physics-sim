@@ -1,16 +1,12 @@
 // Physics sim implemented in Rust
 // Each `step` is a DAY (3600 seconds * 24 hours)
-extern crate find_folder;
-extern crate piston_window;
 
 use std::ops::Add;
-use piston_window::*;
 
 const GRAVITY: f64 = 6.67428e-11;
 const DAY: f64 = 24.0 * 3600.0;
 const AU: f64 = 149.6e9; // Astronomical Unit in meters, roughly distance earth -> sun
 const SCALE: f64 = 50.0 / AU;
-const DIMENSION: u32 = 1000;
 const HALF: f64 = AU * 10.0;
 
 type Vel = (f64, f64);
@@ -25,6 +21,7 @@ struct Force {
     x: f64,
     y: f64,
 }
+
 impl Add for Force {
     type Output = Force;
     fn add(self, other: Force) -> Force {
@@ -40,32 +37,17 @@ struct Body {
     pos: Pos,     // x y non negative coordinates
     vel: Vel,     // velocity in km/s
     mass: Mass,   // mass in kg
-    color: Color, // color in rgba percentages
-    name: String,
-    scale_pos: Pos, // coordinates scalled to piston window
-    radius: f64,    // arbitrary radius?
+    name: String
 }
 
 impl Body {
-    fn new(p: Pos, v: Vel, m: Mass, c: Color, n: String, r: f64) -> Body {
+    fn new(p: Pos, v: Vel, m: Mass, n: String, r: f64) -> Body {
         Body {
             pos: p,
             vel: v,
             mass: m,
-            color: c,
-            name: n,
-            radius: r,
-            scale_pos: (p.0 * SCALE, p.1 * SCALE),
+            name: n
         }
-    }
-
-    fn draw_planet(&self, c: Context, g: &mut G2d) {
-        Ellipse::new(self.color) // red color
-            .draw(
-                [self.scale_pos.0, self.scale_pos.1,
-                 self.radius, self.radius],
-                &c.draw_state, c.transform, g
-            );
     }
 
     // Get distance returns a vector of the Distance
@@ -109,56 +91,46 @@ impl Body {
         self.vel.1 += acc.1;
         self.pos.0 += self.vel.0 * DAY;
         self.pos.1 += self.vel.1 * DAY;
-        self.scale_pos.0 = self.pos.0 * SCALE;
-        self.scale_pos.1 = self.pos.1 * SCALE;
     }
 }
 
-fn main() {
-    let mut window: PistonWindow = WindowSettings::new(
-        "piston: draw_state",
-        Size {
-            width: DIMENSION,
-            height: DIMENSION + 80,
-        },
-    ).exit_on_esc(true)
-        .samples(4)
-        .build()
-        .unwrap();
-    // piston window lazy means that only events will tricker a step
-    window.set_lazy(false);
-
-    let mut solar_system = big_bang();
-    while let Some(e) = window.next() {
-        window.draw_2d(&e, |c, g| {
-            clear([0.129, 0.1468, 0.168, 1.0], g);
-            g.clear_stencil(0);
-
-            let mut sums = Vec::new();
-            for body in solar_system.iter() {
-                let mut forces = Vec::new();
-                for i in 0..solar_system.len() {
-                    let distance = body.get_distance(solar_system[i].pos);
-                    let force = body.get_force(solar_system[i].mass, distance);
-                    forces.push(force);
-                }
-                let sum = forces
-                    .iter()
-                    .fold(Force { x: 0.0, y: 0.0 }, (|sum, value| sum + value.clone()));
-                sums.insert(0, sum);
-            }
-            for body in solar_system.iter_mut() {
-                let force = sums.pop();
-                let accel = body.accelerate(force.unwrap());
-                body.move_body(accel);
-                body.draw_planet(c, g);
-                println!(
-                    "{:?}: \n  Pos: {:?}\n  Vel: {:?}",
-                    body.name, body.pos, body.vel
-                );
-            }
-        });
+trait ToVec: Iterator {
+    fn to_vec(self) -> Vec<Self::Item> where Self: Sized {
+        self.collect::<Vec<_>>()
     }
+}
+
+impl<T> ToVec for T where T: Iterator {}
+
+fn main() {
+    let mut solar_system = big_bang();
+    let mut args_iter = std::env::args();
+    let _name = args_iter.next();
+    let iters = args_iter.next().and_then(|n|n.parse().ok()).expect("Provide a number of iterations");
+
+    for _ in 0..iters {
+        // Calculate
+        let sums = solar_system.iter().map(|body| {
+            let forces_for_body = solar_system.iter().map(|body2| {
+                let distance = body.get_distance(body2.pos);
+                body.get_force(body2.mass, distance)
+            }).to_vec();
+
+            forces_for_body.iter()
+                .fold(Force { x: 0.0, y: 0.0 }, |sum, value| sum + value.clone())
+        }).to_vec();
+
+        // Apply
+        for (body, force) in solar_system.iter_mut().zip(sums) {
+            let accel = body.accelerate(force);
+            body.move_body(accel);
+            // println!(
+            //     "{:?}: \n  Pos: {:?}\n  Vel: {:?}",
+            //     body.name, body.pos, body.vel
+            // );
+        }
+    }
+    println!("Result is {:#?}", solar_system);
 }
 
 fn big_bang() -> Vec<Body> {
@@ -167,7 +139,6 @@ fn big_bang() -> Vec<Body> {
         (HALF, HALF),
         (0.0, 0.0),
         1.98892 * 10.0_f64.powf(30.0),
-        [255.0, 255.0, 0.0, 1.0],
         "Sun".to_string(),
         15.0,
     );
@@ -175,7 +146,6 @@ fn big_bang() -> Vec<Body> {
         (HALF + AU * 1.524, HALF),
         (0.0, -24.077 * 1000.0),
         6.38 * 10.0_f64.powf(23.0),
-        [0.69803, 0.186215, 0.12549, 1.0],
         "Mars".to_string(),
         10.0,
     );
@@ -183,7 +153,6 @@ fn big_bang() -> Vec<Body> {
         (HALF - AU, HALF),
         (0.0, 29.78 * 1000.0),
         5.972 * 10.0_f64.powf(24.0),
-        [0.007843, 0.2202, 0.9960, 1.0],
         "Earth".to_string(),
         9.0,
     );
@@ -191,7 +160,6 @@ fn big_bang() -> Vec<Body> {
         (HALF + 108.2e9, HALF),
         (0.0, -35.02 * 1000.0),
         4.8685 * 10.0_f64.powf(24.0),
-        [0.298039, 0.7705882, 0.411765, 1.0],
         "Venus".to_string(),
         8.0,
     );
@@ -199,7 +167,6 @@ fn big_bang() -> Vec<Body> {
         (HALF + AU * 0.39, HALF),
         (0.0, -48.0 * 1000.0),
         3.3010 * 10.0_f64.powf(23.0),
-        [0.4312, 0.3725, 0.4, 1.0],
         "Venus".to_string(),
         6.0,
     );
@@ -207,7 +174,6 @@ fn big_bang() -> Vec<Body> {
         (HALF, HALF + 5.2 * AU),
         (13.1 * 1000.0, 0.0),
         1898.0 * 10.0_f64.powf(24.0),
-        [0.69411, 0.6117, 0.85098, 1.0],
         "Jupiter".to_string(),
         14.0,
     );
@@ -215,7 +181,6 @@ fn big_bang() -> Vec<Body> {
         (HALF, HALF + 9.58 * AU),
         (9.7 * 1000.0, 0.0),
         568.0 * 10.0_f64.powf(24.0),
-        [0.2390, 0.99215, 0.13333, 1.0],
         "Saturn".to_string(),
         14.0,
     );
@@ -223,7 +188,6 @@ fn big_bang() -> Vec<Body> {
         (HALF, HALF + 19.22 * AU),
         (6.8 * 1000.0, 0.0),
         86.8 * 10.0_f64.powf(24.0),
-        [0.12594, 0.16117, 0.23098, 1.0],
         "Uranus".to_string(),
         14.0,
     );
@@ -231,7 +195,6 @@ fn big_bang() -> Vec<Body> {
         (HALF, HALF + 30.1 * AU),
         (5.4 * 1000.0, 0.0),
         102.0 * 10.0_f64.powf(24.0),
-        [0.26667, 0.351254, 0.49803, 1.0],
         "Neptune".to_string(),
         14.0,
     );
@@ -253,7 +216,6 @@ mod tests {
             (5.0, 5.0),
             (0.0, 20.0),
             500.0,
-            [0.0; 4],
             "Simple Planet".to_string(),
             1.0,
         );
@@ -264,7 +226,6 @@ mod tests {
             (HALF - AU, HALF),
             (0.0, 35.02 * 1000.0),
             5.972 * 10.0_f64.powf(24.0),
-            [0.0; 4],
             "Earth".to_string(),
             0.9,
         );
