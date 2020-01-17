@@ -6,14 +6,12 @@ use std::ops::Add;
 const GRAVITY: f64 = 6.67428e-11;
 const DAY: f64 = 24.0 * 3600.0;
 const AU: f64 = 149.6e9; // Astronomical Unit in meters, roughly distance earth -> sun
-const SCALE: f64 = 50.0 / AU;
 const HALF: f64 = AU * 10.0;
 
 type Vel = (f64, f64);
 type Pos = (f64, f64);
 type Mass = f64;
 type Accel = (f64, f64);
-type Color = [f32; 4];
 type Distance = (f64, f64);
 
 #[derive(Debug, Clone, PartialEq)]
